@@ -242,7 +242,8 @@ sentrycrashdl_dladdr(const uintptr_t address, Dl_info *const info)
 
             for (uint32_t iSym = 0; iSym < symtabCmd->nsyms; iSym++) {
                 // If n_value is 0, the symbol refers to an external object.
-                if (symbolTable[iSym].n_value != 0) {
+                // At runtime symbol table may have more than one element match the target address, elements whose n_strx is 1 was not the symbol we want,because it's name was empty
+                if (symbolTable[iSym].n_value != 0 && symbolTable[iSym].n_un.n_strx != 1) {
                     uintptr_t symbolBase = symbolTable[iSym].n_value;
                     uintptr_t currentDistance = addressWithSlide - symbolBase;
                     if ((addressWithSlide >= symbolBase) && (currentDistance <= bestDistance)) {

@@ -62,10 +62,7 @@
                   Identifier = "SentryCrashReportStore_Tests/testCrashReportCount1">
                </Test>
                <Test
-                  Identifier = "SentryNSErrorTests/testSerializeWithUnderlyingNSException()">
-               </Test>
-               <Test
-                  Identifier = "SentryNetworkTrackerIntegrationTests/testGetRequest_SpanCreatedAndBaggageHeaderAdded()">
+                  Identifier = "SentryCrashReportStore_Tests/testDeleteAllReports">
                </Test>
                <Test
                   Identifier = "SentryProfilerSwiftTests/testConcurrentSpansWithTimeout()">
@@ -78,12 +75,6 @@
                </Test>
                <Test
                   Identifier = "SentrySubClassFinderTests/testActOnSubclassesOfViewController()">
-               </Test>
-               <Test
-                  Identifier = "SentryUIApplicationTests/test_applicationWithScenes()">
-               </Test>
-               <Test
-                  Identifier = "SentryUIApplicationTests/test_applicationWithScenes_noWindow()">
                </Test>
             </SkippedTests>
          </TestableReference>

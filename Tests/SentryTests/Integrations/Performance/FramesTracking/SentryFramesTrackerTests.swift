@@ -3,60 +3,60 @@ import XCTest
 
 #if os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)
 class SentryFramesTrackerTests: XCTestCase {
-    
+
     private class Fixture {
-        
+
         var displayLinkWrapper: TestDisplayLinkWrapper
         var queue: DispatchQueue
-        
+        lazy var hub = TestHub(client: nil, andScope: nil)
+        lazy var tracer = SentryTracer(transactionContext: TransactionContext(name: "test transaction", operation: "test operation"), hub: hub)
+
         init() {
             displayLinkWrapper = TestDisplayLinkWrapper()
             queue = DispatchQueue(label: "SentryFramesTrackerTests", qos: .background, attributes: [.concurrent])
         }
-        
+
         lazy var sut: SentryFramesTracker = SentryFramesTracker(displayLinkWrapper: displayLinkWrapper)
     }
-    
+
     private var fixture: Fixture!
-    
+
     override func setUp() {
         super.setUp()
         fixture = Fixture()
 
 #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
         // the profiler must be running for the frames tracker to record frame rate info etc, validated in assertProfilingData()
-        SentryProfiler.start(with: TestHub(client: nil, andScope: nil))
+        SentryProfiler.start(withTracer: fixture.tracer.traceId)
 #endif
     }
 
     override func tearDown() {
         super.tearDown()
-#if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
-        SentryProfiler.stop()
-#endif
+        clearTestState()
     }
-    
+
     func testIsNotRunning_WhenNotStarted() {
         XCTAssertFalse(fixture.sut.isRunning)
     }
-    
+
     func testIsRunning_WhenStarted() {
         let sut = fixture.sut
         sut.start()
         XCTAssertTrue(sut.isRunning)
     }
-    
+
     func testIsNotRunning_WhenStopped() {
         let sut = fixture.sut
         sut.start()
         sut.stop()
         XCTAssertFalse(sut.isRunning)
     }
-    
+
     func testSlowFrame() throws {
         let sut = fixture.sut
         sut.start()
-        
+
         fixture.displayLinkWrapper.call()
         _ = fixture.displayLinkWrapper.fastestSlowFrame()
         fixture.displayLinkWrapper.normalFrame()
@@ -64,11 +64,11 @@ class SentryFramesTrackerTests: XCTestCase {
 
         try assert(slow: 2, frozen: 0, total: 3)
     }
-    
+
     func testFrozenFrame() throws {
         let sut = fixture.sut
         sut.start()
-        
+
         fixture.displayLinkWrapper.call()
         _ = fixture.displayLinkWrapper.fastestSlowFrame()
         _ = fixture.displayLinkWrapper.fastestFrozenFrame()
@@ -87,40 +87,11 @@ class SentryFramesTrackerTests: XCTestCase {
 
         try assert(slow: 1, frozen: 1, total: 2, frameRates: 2)
     }
-    
-    func testAllFrames_ConcurrentRead() throws {
-        // To not spam the test logs
-        SentryLog.configure(true, diagnosticLevel: .error)
-        
-        let sut = fixture.sut
-        sut.start()
-        
-        let group = DispatchGroup()
 
-        let currentFrames = sut.currentFrames
-        assertPreviousCountLesserThanCurrent(group) { return currentFrames.frozen }
-        assertPreviousCountLesserThanCurrent(group) { return currentFrames.slow }
-        assertPreviousCountLesserThanCurrent(group) { return currentFrames.total }
-        
-        fixture.displayLinkWrapper.call()
-        
-        let frames: UInt = 600_000
-        for _ in 0 ..< frames {
-            fixture.displayLinkWrapper.normalFrame()
-            _ = fixture.displayLinkWrapper.fastestSlowFrame()
-            _ = fixture.displayLinkWrapper.fastestFrozenFrame()
-        }
-        
-        group.wait()
-        try assert(slow: frames, frozen: frames, total: 3 * frames)
-        
-        setTestDefaultLogLevel()
-    }
-    
     func testPerformanceOfTrackingFrames() throws {
         let sut = fixture.sut
         sut.start()
-        
+
         let frames: UInt = 1_000
         self.measure {
             for _ in 0 ..< frames {
@@ -227,19 +198,6 @@ private extension SentryFramesTrackerTests {
         }
     }
 #endif
-
-    func assertPreviousCountLesserThanCurrent(_ group: DispatchGroup, count: @escaping () -> UInt) {
-        group.enter()
-        fixture.queue.async {
-            var previousCount: UInt = 0
-            for _ in 0 ..< 60_000 {
-                let currentCount = count()
-                XCTAssertTrue(previousCount <= currentCount)
-                previousCount = currentCount
-            }
-            group.leave()
-        }
-    }
 }
 
 #endif

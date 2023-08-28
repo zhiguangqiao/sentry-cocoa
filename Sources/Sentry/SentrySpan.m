@@ -1,12 +1,14 @@
 #import "SentrySpan.h"
 #import "NSDate+SentryExtras.h"
 #import "NSDictionary+SentrySanitize.h"
-#import "SentryCurrentDate.h"
+#import "SentryCurrentDateProvider.h"
+#import "SentryDependencyContainer.h"
 #import "SentryFrame.h"
 #import "SentryId.h"
 #import "SentryLog.h"
 #import "SentryMeasurementValue.h"
 #import "SentryNoOpSpan.h"
+#import "SentrySampleDecision+Private.h"
 #import "SentrySerializable.h"
 #import "SentrySpanContext.h"
 #import "SentrySpanId.h"
@@ -29,7 +31,7 @@ SentrySpan ()
 - (instancetype)initWithContext:(SentrySpanContext *)context
 {
     if (self = [super init]) {
-        self.startTimestamp = [SentryCurrentDate date];
+        self.startTimestamp = [SentryDependencyContainer.sharedInstance.dateProvider date];
         _data = [[NSMutableDictionary alloc] init];
         _tags = [[NSMutableDictionary alloc] init];
         _isFinished = NO;
@@ -41,6 +43,7 @@ SentrySpan ()
         _spanDescription = context.spanDescription;
         _spanId = context.spanId;
         _sampled = context.sampled;
+        _origin = context.origin;
     }
     return self;
 }
@@ -144,9 +147,9 @@ SentrySpan ()
     self.status = status;
     _isFinished = YES;
     if (self.timestamp == nil) {
-        self.timestamp = [SentryCurrentDate date];
+        self.timestamp = [SentryDependencyContainer.sharedInstance.dateProvider date];
         SENTRY_LOG_DEBUG(@"Setting span timestamp: %@ at system time %llu", self.timestamp,
-            (unsigned long long)SentryCurrentDate.systemTime);
+            (unsigned long long)SentryDependencyContainer.sharedInstance.dateProvider.systemTime);
     }
     if (self.tracer == nil) {
         SENTRY_LOG_DEBUG(
@@ -169,7 +172,8 @@ SentrySpan ()
         @"type" : SENTRY_TRACE_TYPE,
         @"span_id" : self.spanId.sentrySpanIdString,
         @"trace_id" : self.traceId.sentryIdString,
-        @"op" : self.operation
+        @"op" : self.operation,
+        @"origin" : self.origin
     }
                                                  .mutableCopy;
 
@@ -182,7 +186,7 @@ SentrySpan ()
     // Since we guard for 'undecided', we'll
     // either send it if it's 'true' or 'false'.
     if (self.sampled != kSentrySampleDecisionUndecided) {
-        [mutableDictionary setValue:nameForSentrySampleDecision(self.sampled) forKey:@"sampled"];
+        [mutableDictionary setValue:valueForSentrySampleDecision(self.sampled) forKey:@"sampled"];
     }
 
     if (self.spanDescription != nil) {

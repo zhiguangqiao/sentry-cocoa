@@ -16,19 +16,20 @@ class SentryTimeToDisplayTrackerTest: XCTestCase {
 
         init() {
             framesTracker = SentryFramesTracker(displayLinkWrapper: displayLinkWrapper)
+            SentryDependencyContainer.sharedInstance().framesTracker = framesTracker
             framesTracker.start()
         }
 
         func getSut(for controller: UIViewController, waitForFullDisplay: Bool) -> SentryTimeToDisplayTracker {
-            return SentryTimeToDisplayTracker(for: controller, framesTracker: framesTracker, waitForFullDisplay: waitForFullDisplay)
+            return SentryTimeToDisplayTracker(for: controller, waitForFullDisplay: waitForFullDisplay)
         }
     }
 
-    private let fixture = Fixture()
+    private lazy var fixture = Fixture()
 
     override func setUp() {
         super.setUp()
-        CurrentDate.setCurrentDateProvider(fixture.dateProvider)
+        SentryDependencyContainer.sharedInstance().dateProvider = fixture.dateProvider
     }
 
     override func tearDown() {
@@ -57,6 +58,7 @@ class SentryTimeToDisplayTrackerTest: XCTestCase {
         XCTAssertTrue(ttidSpan.isFinished)
         XCTAssertEqual(ttidSpan.spanDescription, "UIViewController initial display")
         XCTAssertEqual(ttidSpan.operation, SentrySpanOperationUILoadInitialDisplay)
+        XCTAssertEqual(ttidSpan.origin, "auto.ui.time_to_display")
 
         assertMeasurement(tracer: tracer, name: "time_to_initial_display", duration: 2_000)
 
@@ -160,6 +162,7 @@ class SentryTimeToDisplayTrackerTest: XCTestCase {
 
         XCTAssertEqual(sut.fullDisplaySpan?.spanDescription, "UIViewController full display")
         XCTAssertEqual(sut.fullDisplaySpan?.operation, SentrySpanOperationUILoadFullDisplay)
+        XCTAssertEqual(sut.fullDisplaySpan?.origin, "manual.ui.time_to_display")
     }
 
     func testReportFullDisplay_waitingForFullDisplay_notReadyToDisplay() {
@@ -273,4 +276,4 @@ class SentryTimeToDisplayTrackerTest: XCTestCase {
     }
 }
 
-#endif
+#endif // os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)

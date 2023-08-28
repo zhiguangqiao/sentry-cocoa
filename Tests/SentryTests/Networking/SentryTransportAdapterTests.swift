@@ -12,9 +12,7 @@ class SentryTransportAdapterTests: XCTestCase {
         let attachment = Attachment(data: Data(), filename: "test.txt")
         
         var sut: SentryTransportAdapter {
-            get {
-                return SentryTransportAdapter(transport: transport, options: options)
-            }
+            return SentryTransportAdapter(transport: transport, options: options)
         }
     }
 
@@ -24,8 +22,8 @@ class SentryTransportAdapterTests: XCTestCase {
     override func setUp() {
         super.setUp()
         
-        CurrentDate.setCurrentDateProvider(TestCurrentDateProvider())
-
+        SentryDependencyContainer.sharedInstance().dateProvider = TestCurrentDateProvider()
+        
         fixture = Fixture()
         sut = fixture.sut
     }

@@ -8,7 +8,10 @@
 #import "SentrySpanProtocol.h"
 #import "SentryTracer.h"
 #import "SentryTransactionContext+Private.h"
-#import "SentryUIEventTracker.h"
+
+#if SENTRY_HAS_UIKIT
+#    import "SentryUIEventTracker.h"
+#endif // SENTRY_HAS_UIKIT
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -42,6 +45,7 @@ SentryPerformanceTracker () <SentryTracerDelegate>
 - (SentrySpanId *)startSpanWithName:(NSString *)name
                          nameSource:(SentryTransactionNameSource)source
                           operation:(NSString *)operation
+                             origin:(NSString *)origin
 {
     id<SentrySpan> activeSpan;
     @synchronized(self.activeSpanStack) {
@@ -51,25 +55,28 @@ SentryPerformanceTracker () <SentryTracerDelegate>
     __block id<SentrySpan> newSpan;
     if (activeSpan != nil) {
         newSpan = [activeSpan startChildWithOperation:operation description:name];
+        newSpan.origin = origin;
     } else {
-        SentryTransactionContext *context =
-            [[SentryTransactionContext alloc] initWithName:name
-                                                nameSource:source
-                                                 operation:operation];
+        SentryTransactionContext *context = [[SentryTransactionContext alloc] initWithName:name
+                                                                                nameSource:source
+                                                                                 operation:operation
+                                                                                    origin:origin];
 
         [SentrySDK.currentHub.scope useSpan:^(id<SentrySpan> span) {
-            BOOL bindToScope = YES;
-            if (span != nil) {
+            BOOL bindToScope = NO;
+            if (span == nil) {
+                bindToScope = YES;
+            }
+#if SENTRY_HAS_UIKIT
+            else {
                 if ([SentryUIEventTracker isUIEventOperation:span.operation]) {
                     SENTRY_LOG_DEBUG(
                         @"Cancelling previous UI event span %@", span.spanId.sentrySpanIdString);
                     [span finishWithStatus:kSentrySpanStatusCancelled];
-                } else {
-                    SENTRY_LOG_DEBUG(@"Current scope span %@ is not tracking a UI event",
-                        span.spanId.sentrySpanIdString);
-                    bindToScope = NO;
+                    bindToScope = YES;
                 }
             }
+#endif // SENTRY_HAS_UIKIT
 
             SENTRY_LOG_DEBUG(@"Creating new transaction bound to scope: %d", bindToScope);
 
@@ -103,11 +110,13 @@ SentryPerformanceTracker () <SentryTracerDelegate>
 - (void)measureSpanWithDescription:(NSString *)description
                         nameSource:(SentryTransactionNameSource)source
                          operation:(NSString *)operation
+                            origin:(NSString *)origin
                            inBlock:(void (^)(void))block
 {
     SentrySpanId *spanId = [self startSpanWithName:description
                                         nameSource:source
-                                         operation:operation];
+                                         operation:operation
+                                            origin:origin];
     SENTRY_LOG_DEBUG(@"Measuring span %@; description %@; operation: %@", spanId.sentrySpanIdString,
         description, operation);
     [self pushActiveSpan:spanId];
@@ -119,6 +128,7 @@ SentryPerformanceTracker () <SentryTracerDelegate>
 - (void)measureSpanWithDescription:(NSString *)description
                         nameSource:(SentryTransactionNameSource)source
                          operation:(NSString *)operation
+                            origin:(NSString *)origin
                       parentSpanId:(SentrySpanId *)parentSpanId
                            inBlock:(void (^)(void))block
 {
@@ -127,6 +137,7 @@ SentryPerformanceTracker () <SentryTracerDelegate>
                [self measureSpanWithDescription:description
                                      nameSource:source
                                       operation:operation
+                                         origin:origin
                                         inBlock:block];
            }];
 }

@@ -1,15 +1,18 @@
 #import "SentryTimeToDisplayTracker.h"
-#import "SentryCurrentDate.h"
-#import "SentryFramesTracker.h"
-#import "SentryMeasurementValue.h"
-#import "SentrySpan.h"
-#import "SentrySpanContext.h"
-#import "SentrySpanId.h"
-#import "SentrySpanOperations.h"
-#import "SentrySwift.h"
-#import "SentryTracer.h"
 
 #if SENTRY_HAS_UIKIT
+
+#    import "SentryCurrentDateProvider.h"
+#    import "SentryDependencyContainer.h"
+#    import "SentryFramesTracker.h"
+#    import "SentryMeasurementValue.h"
+#    import "SentrySpan.h"
+#    import "SentrySpanContext.h"
+#    import "SentrySpanId.h"
+#    import "SentrySpanOperations.h"
+#    import "SentrySwift.h"
+#    import "SentryTraceOrigins.h"
+#    import "SentryTracer.h"
 
 @interface
 SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
@@ -23,18 +26,15 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
     BOOL _waitForFullDisplay;
     BOOL _isReadyToDisplay;
     BOOL _fullyDisplayedReported;
-    SentryFramesTracker *_frameTracker;
     NSString *_controllerName;
 }
 
 - (instancetype)initForController:(UIViewController *)controller
-                    framesTracker:(SentryFramesTracker *)framestracker
                waitForFullDisplay:(BOOL)waitForFullDisplay
 {
     if (self = [super init]) {
         _controllerName = [SwiftDescriptor getObjectClassName:controller];
         _waitForFullDisplay = waitForFullDisplay;
-        _frameTracker = framestracker;
 
         _isReadyToDisplay = NO;
         _fullyDisplayedReported = NO;
@@ -47,12 +47,14 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
     self.initialDisplaySpan = [tracer
         startChildWithOperation:SentrySpanOperationUILoadInitialDisplay
                     description:[NSString stringWithFormat:@"%@ initial display", _controllerName]];
+    self.initialDisplaySpan.origin = SentryTraceOriginAutoUITimeToDisplay;
 
     if (self.waitForFullDisplay) {
         self.fullDisplaySpan =
             [tracer startChildWithOperation:SentrySpanOperationUILoadFullDisplay
                                 description:[NSString stringWithFormat:@"%@ full display",
                                                       _controllerName]];
+        self.fullDisplaySpan.origin = SentryTraceOriginManualUITimeToDisplay;
 
         // By concept TTID and TTFD spans should have the same beginning,
         // which also should be the same of the transaction starting.
@@ -61,7 +63,7 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
 
     self.initialDisplaySpan.startTimestamp = tracer.startTimestamp;
 
-    [_frameTracker addListener:self];
+    [SentryDependencyContainer.sharedInstance.framesTracker addListener:self];
     [tracer setFinishCallback:^(
         SentryTracer *_tracer) { [self trimTTFDIdNecessaryForTracer:_tracer]; }];
 }
@@ -78,7 +80,8 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
         // We need the timestamp to be able to calculate the duration
         // but we can't finish first and add measure later because
         // finishing the span may trigger the tracer finishInternal.
-        self.fullDisplaySpan.timestamp = [SentryCurrentDate date];
+        self.fullDisplaySpan.timestamp =
+            [SentryDependencyContainer.sharedInstance.dateProvider date];
         [self addTimeToDisplayMeasurement:self.fullDisplaySpan name:@"time_to_full_display"];
         [self.fullDisplaySpan finish];
     }
@@ -92,7 +95,7 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
 
 - (void)framesTrackerHasNewFrame
 {
-    NSDate *finishTime = [SentryCurrentDate date];
+    NSDate *finishTime = [SentryDependencyContainer.sharedInstance.dateProvider date];
 
     // The purpose of TTID and TTFD is to measure how long
     // takes to the content of the screen to change.
@@ -103,7 +106,7 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
         [self addTimeToDisplayMeasurement:self.initialDisplaySpan name:@"time_to_initial_display"];
 
         [self.initialDisplaySpan finish];
-        [_frameTracker removeListener:self];
+        [SentryDependencyContainer.sharedInstance.framesTracker removeListener:self];
     }
     if (_waitForFullDisplay && _fullyDisplayedReported && self.fullDisplaySpan.isFinished == NO) {
         self.fullDisplaySpan.timestamp = finishTime;
@@ -126,4 +129,5 @@ SentryTimeToDisplayTracker () <SentryFramesTrackerListener>
 }
 
 @end
-#endif
+
+#endif // SENTRY_HAS_UIKIT

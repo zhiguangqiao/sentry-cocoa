@@ -2,100 +2,14 @@ import Sentry
 import UIKit
 
 class ViewController: UIViewController {
-    
-    @IBOutlet weak var dsnTextField: UITextField!
-    @IBOutlet weak var anrFullyBlockingButton: UIButton!
-    @IBOutlet weak var anrFillingRunLoopButton: UIButton!
-    @IBOutlet weak var framesLabel: UILabel!
-    @IBOutlet weak var breadcrumbLabel: UILabel!
-    @IBOutlet weak var uiTestNameLabel: UILabel!
 
     private let dispatchQueue = DispatchQueue(label: "ViewController", attributes: .concurrent)
-    private let diskWriteException = DiskWriteException()
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        // Do any additional setup after loading the view.
-        SentrySDK.configureScope { (scope) in
-            scope.setEnvironment("debug")
-            scope.setTag(value: "swift", key: "language")
-            scope.setExtra(value: String(describing: self), key: "currentViewController")
-
-            let user = User(userId: "1")
-            user.email = "tony@example.com"
-            scope.setUser(user)
-            
-            if let path = Bundle.main.path(forResource: "Tongariro", ofType: "jpg") {
-                scope.addAttachment(Attachment(path: path, filename: "Tongariro.jpg", contentType: "image/jpeg"))
-            }
-            if let data = "hello".data(using: .utf8) {
-                scope.addAttachment(Attachment(data: data, filename: "log.txt"))
-            }
-        }
-
-        // Also works
-        let user = User(userId: "1")
-        user.email = "tony1@example.com"
-        SentrySDK.setUser(user)
-        
-        dispatchQueue.async {
-            let dsn = DSNStorage.shared.getDSN()
-            
-            DispatchQueue.main.async {
-                self.dsnTextField.text = dsn
-                self.dsnTextField.backgroundColor = UIColor.systemGreen
-            }
-        }
-
-        if let uiTestName = ProcessInfo.processInfo.environment["io.sentry.ui-test.test-name"] {
-            uiTestNameLabel.text = uiTestName
-        }
-    }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
         SentrySDK.reportFullyDisplayed()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            self.framesLabel?.text = "Frames Total:\(PrivateSentrySDKOnly.currentScreenFrames.total) Slow:\(PrivateSentrySDKOnly.currentScreenFrames.slow) Frozen:\(PrivateSentrySDKOnly.currentScreenFrames.frozen)"
-        }
-
-        SentrySDK.configureScope { (scope) in
-            let dict = scope.serialize()
-
-            guard
-                let crumbs = dict["breadcrumbs"] as? [[String: Any]],
-                let breadcrumb = crumbs.last,
-                let data = breadcrumb["data"] as? [String: String]
-            else {
-                return
-            }
-
-            self.breadcrumbLabel?.text = "{ category: \(breadcrumb["category"] ?? "nil"), parentViewController: \(data["parentViewController"] ?? "nil"), beingPresented: \(data["beingPresented"] ?? "nil"), window_isKeyWindow: \(data["window_isKeyWindow"] ?? "nil"), is_window_rootViewController: \(data["is_window_rootViewController"] ?? "nil") }"
-        }
-    }
-    
-    @IBAction func addBreadcrumb(_ sender: UIButton) {
-        highlightButton(sender)
-        let crumb = Breadcrumb(level: SentryLevel.info, category: "Debug")
-        crumb.message = "tapped addBreadcrumb"
-        crumb.type = "user"
-        SentrySDK.addBreadcrumb(crumb)
-    }
-    
-    @IBAction func captureMessage(_ sender: UIButton) {
-        highlightButton(sender)
-        let eventId = SentrySDK.capture(message: "Yeah captured a message")
-        // Returns eventId in case of successfull processed event
-        // otherwise nil
-        print("\(String(describing: eventId))")
-    }
-    
     @IBAction func uiClickTransaction(_ sender: UIButton) {
         highlightButton(sender)
         dispatchQueue.async {
@@ -111,57 +25,17 @@ class ViewController: UIViewController {
         let dataTask = session.dataTask(with: imgUrl) { (_, _, _) in }
         dataTask.resume()
     }
-    
-    @IBAction func captureUserFeedback(_ sender: UIButton) {
-        highlightButton(sender)
-        let error = NSError(domain: "UserFeedbackErrorDomain", code: 0, userInfo: [NSLocalizedDescriptionKey: "This never happens."])
 
-        let eventId = SentrySDK.capture(error: error) { scope in
-            scope.setLevel(.fatal)
-        }
-        
-        let userFeedback = UserFeedback(eventId: eventId)
-        userFeedback.comments = "It broke on iOS-Swift. I don't know why, but this happens."
-        userFeedback.email = "john@me.com"
-        userFeedback.name = "John Me"
-        SentrySDK.capture(userFeedback: userFeedback)
-    }
-    
-    @IBAction func captureError(_ sender: UIButton) {
-        highlightButton(sender)
-        do {
-            try RandomErrorGenerator.generate()
-        } catch {
-            SentrySDK.capture(error: error) { (scope) in
-                // Changes in here will only be captured for this event
-                // The scope in this callback is a clone of the current scope
-                // It contains all data but mutations only influence the event being sent
-                scope.setTag(value: "value", key: "myTag")
-            }
-        }
-    }
-    
-    @IBAction func captureNSException(_ sender: UIButton) {
-        highlightButton(sender)
-        let exception = NSException(name: NSExceptionName("My Custom exeption"), reason: "User clicked the button", userInfo: nil)
-        let scope = Scope()
-        scope.setLevel(.fatal)
-        // !!!: By explicity just passing the scope, only the data in this scope object will be added to the event; the global scope (calls to configureScope) will be ignored. If you do that, be careful–a lot of useful info is lost. If you just want to mutate what's in the scope use the callback, see: captureError.
-        SentrySDK.capture(exception: exception, scope: scope)
-    }
-    
-    @IBAction func captureFatalError(_ sender: UIButton) {
-        highlightButton(sender)
-        fatalError("This is a fatal error. Oh no 😬.")
-    }
-
-    var span: Span?
+    var spans = [Span]()
     let profilerNotification = NSNotification.Name("SentryProfileCompleteNotification")
-    
+
     @IBAction func startTransaction(_ sender: UIButton) {
         highlightButton(sender)
-        guard span == nil else { return }
-        span = SentrySDK.startTransaction(name: "Manual Transaction", operation: "Manual Operation")
+        startNewTransaction()
+    }
+
+    fileprivate func startNewTransaction() {
+        spans.append(SentrySDK.startTransaction(name: "Manual Transaction", operation: "Manual Operation"))
 
         NotificationCenter.default.addObserver(forName: profilerNotification, object: nil, queue: nil) { note in
             DispatchQueue.main.async {
@@ -178,12 +52,64 @@ class ViewController: UIViewController {
         }
     }
 
+    @IBAction func startTransactionFromOtherThread(_ sender: UIButton) {
+        highlightButton(sender)
+
+        Thread.detachNewThread {
+            self.startNewTransaction()
+        }
+    }
+
     @IBAction func stopTransaction(_ sender: UIButton) {
         highlightButton(sender)
-        span?.finish()
-        span = nil
 
-        NotificationCenter.default.removeObserver(self, name: profilerNotification, object: nil)
+        defer {
+            if spans.isEmpty {
+                NotificationCenter.default.removeObserver(self, name: profilerNotification, object: nil)
+            }
+        }
+
+        func showConfirmation(span: Span) {
+            DispatchQueue.main.async {
+                let confirmation = UIAlertController(title: "Finished span \(span.spanId.sentrySpanIdString)", message: nil, preferredStyle: .alert)
+                confirmation.addAction(UIAlertAction(title: "OK", style: .default))
+                self.present(confirmation, animated: true)
+            }
+        }
+
+        func finishSpan(span: Span) {
+            span.finish()
+            self.spans.remove(at: self.spans.firstIndex(where: { testSpan in
+                testSpan.spanId == span.spanId
+            })!)
+            showConfirmation(span: span)
+        }
+
+        if spans.count == 1 {
+            finishSpan(span: spans[0])
+            return
+        }
+
+        let alert = UIAlertController(title: "Choose span to stop", message: nil, preferredStyle: .actionSheet)
+        spans.forEach { span in
+            alert.addAction(UIAlertAction(title: span.spanId.sentrySpanIdString, style: .default, handler: { _ in
+                let threadPicker = UIAlertController(title: "From thread:", message: nil, preferredStyle: .actionSheet)
+                threadPicker.addAction(UIAlertAction(title: "Main thread", style: .default, handler: { _ in
+                    DispatchQueue.main.async {
+                        finishSpan(span: span)
+                    }
+                }))
+                threadPicker.addAction(UIAlertAction(title: "BG thread", style: .default, handler: { _ in
+                    Thread.detachNewThread {
+                        finishSpan(span: span)
+                    }
+                }))
+                threadPicker.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                self.present(threadPicker, animated: true)
+            }))
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
     }
 
     @IBAction func captureTransaction(_ sender: UIButton) {
@@ -204,177 +130,7 @@ class ViewController: UIViewController {
             transaction.finish()
         })
     }
-   
-    @IBAction func crash(_ sender: UIButton) {
-        SentrySDK.crash()
-    }
 
-    // swiftlint:disable force_unwrapping
-    @IBAction func unwrapCrash(_ sender: UIButton) {
-        highlightButton(sender)
-        let a: String! = nil
-        let b: String = a!
-        print(b)
-    }
-    // swiftlint:enable force_unwrapping
-
-    @IBAction func asyncCrash(_ sender: UIButton) {
-        highlightButton(sender)
-        DispatchQueue.main.async {
-            self.asyncCrash1()
-        }
-    }
-    
-    func asyncCrash1() {
-        DispatchQueue.main.async {
-            self.asyncCrash2()
-        }
-    }
-    
-    func asyncCrash2() {
-        DispatchQueue.main.async {
-            SentrySDK.crash()
-        }
-    }
-
-    @IBAction func oomCrash(_ sender: UIButton) {
-        highlightButton(sender)
-        DispatchQueue.main.async {
-            let megaByte = 1_024 * 1_024
-            let memoryPageSize = NSPageSize()
-            let memoryPages = megaByte / memoryPageSize
-
-            while true {
-                // Allocate one MB and set one element of each memory page to something.
-                let ptr = UnsafeMutablePointer<Int8>.allocate(capacity: megaByte)
-                for i in 0..<memoryPages {
-                    ptr[i * memoryPageSize] = 40
-                }
-            }
-        }
-    }
-    
-    @IBAction func diskWriteException(_ sender: UIButton) {
-        highlightButton(sender)
-        diskWriteException.continuouslyWriteToDisk()
-        
-        // As we are writing to disk continuously we would keep adding spans to this UIEventTransaction.
-        SentrySDK.span?.finish()
-    }
-    
-    @IBAction func highCPULoad(_ sender: UIButton) {
-        highlightButton(sender)
-        dispatchQueue.async {
-            while true {
-                _ = self.calcPi()
-            }
-        }
-    }
-
-    @IBAction func start100Threads(_ sender: UIButton) {
-        highlightButton(sender)
-        for _ in 0..<100 {
-            Thread.detachNewThread {
-                Thread.sleep(forTimeInterval: 10)
-            }
-        }
-    }
-    
-    private func calcPi() -> Double {
-        var denominator = 1.0
-        var pi = 0.0
-     
-        for i in 0..<10_000_000 {
-            if i % 2 == 0 {
-                pi += 4 / denominator
-            } else {
-                pi -= 4 / denominator
-            }
-            
-            denominator += 2
-        }
-        
-        return pi
-    }
-
-    @IBAction func anrFullyBlocking(_ sender: UIButton) {
-        highlightButton(sender)
-        let buttonTitle = self.anrFullyBlockingButton.currentTitle
-        var i = 0
-        
-        for _ in 0...5_000_000 {
-            i += Int.random(in: 0...10)
-            i -= 1
-            
-            self.anrFullyBlockingButton.setTitle("\(i)", for: .normal)
-        }
-        
-        self.anrFullyBlockingButton.setTitle(buttonTitle, for: .normal)
-    }
-    
-    @IBAction func anrFillingRunLoop(_ sender: UIButton) {
-        highlightButton(sender)
-        let buttonTitle = self.anrFillingRunLoopButton.currentTitle
-        var i = 0
-        
-        func sleep(timeout: Double) {
-            let group = DispatchGroup()
-            group.enter()
-            let queue = DispatchQueue(label: "delay", qos: .background, attributes: [])
-            
-            queue.asyncAfter(deadline: .now() + timeout) {
-                group.leave()
-            }
-            
-            group.wait()
-        }
-
-        dispatchQueue.async {
-            for _ in 0...30 {
-                i += Int.random(in: 0...10)
-                i -= 1
-                
-                DispatchQueue.main.async {
-                    sleep(timeout: 0.1)
-                    self.anrFillingRunLoopButton.setTitle("Title \(i)", for: .normal)
-                }
-            }
-            
-            DispatchQueue.main.sync {
-                self.anrFillingRunLoopButton.setTitle(buttonTitle, for: .normal)
-            }
-        }
-    }
-    
-    @IBAction func dsnChanged(_ sender: UITextField) {
-        let options = Options()
-        options.dsn = sender.text
-
-        if let dsn = options.dsn {
-            sender.backgroundColor = UIColor.systemGreen
-
-            dispatchQueue.async {
-                DSNStorage.shared.saveDSN(dsn: dsn)
-            }
-        } else {
-            sender.backgroundColor = UIColor.systemRed
-
-            dispatchQueue.async {
-                DSNStorage.shared.deleteDSN()
-            }
-        }
-    }
-    
-    @IBAction func resetDSN(_ sender: UIButton) {
-        highlightButton(sender)
-        self.dsnTextField.text = AppDelegate.defaultDSN
-        self.dsnTextField.backgroundColor = UIColor.systemGreen
-
-        dispatchQueue.async {
-            DSNStorage.shared.saveDSN(dsn: AppDelegate.defaultDSN)
-        }
-    }
-    
     @IBAction func showNibController(_ sender: UIButton) {
         highlightButton(sender)
         let nib = NibViewController()
@@ -394,46 +150,5 @@ class ViewController: UIViewController {
         let controller = CoreDataViewController()
         controller.title = "CoreData"
         navigationController?.pushViewController(controller, animated: false)
-    }
-
-    @IBAction func performanceScenarios(_ sender: UIButton) {
-        highlightButton(sender)
-        let controller = PerformanceViewController()
-        controller.title = "Performance Scenarios"
-        navigationController?.pushViewController(controller, animated: false)
-    }
-
-    @IBAction func permissions(_ sender: UIButton) {
-        highlightButton(sender)
-        let controller = PermissionsViewController()
-        controller.title = "Permissions"
-        navigationController?.pushViewController(controller, animated: true)
-    }
-    
-    @IBAction func flush(_ sender: UIButton) {
-        highlightButton(sender)
-        SentrySDK.flush(timeout: 5)
-    }
-    
-    @IBAction func close(_ sender: UIButton) {
-        highlightButton(sender)
-        SentrySDK.close()
-    }
-
-    @IBAction func startSDK(_ sender: UIButton) {
-        highlightButton(sender)
-        AppDelegate.startSentry()
-    }
-
-    func highlightButton(_ sender: UIButton) {
-        let originalLayerColor = sender.layer.backgroundColor
-        let originalTitleColor = sender.titleColor(for: .normal)
-        sender.layer.backgroundColor = UIColor.blue.cgColor
-        sender.setTitleColor(.white, for: .normal)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            sender.layer.backgroundColor = originalLayerColor
-            sender.setTitleColor(originalTitleColor, for: .normal)
-            sender.titleLabel?.textColor = originalTitleColor
-        }
     }
 }

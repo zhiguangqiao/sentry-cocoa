@@ -29,7 +29,7 @@ class SentrySpanTests: XCTestCase {
         }
         
         func getSut(client: SentryClient) -> Span {
-            let hub = SentryHub(client: client, andScope: nil, andCrashWrapper: TestSentryCrashWrapper.sharedInstance(), andCurrentDateProvider: currentDateProvider)
+            let hub = SentryHub(client: client, andScope: nil, andCrashWrapper: TestSentryCrashWrapper.sharedInstance())
             return hub.startTransaction(name: someTransaction, operation: someOperation)
         }
         
@@ -43,7 +43,7 @@ class SentrySpanTests: XCTestCase {
         SentryLog.setLogOutput(logOutput)
 
         fixture = Fixture()
-        CurrentDate.setCurrentDateProvider(fixture.currentDateProvider)
+        SentryDependencyContainer.sharedInstance().dateProvider = fixture.currentDateProvider
     }
     
     func testInitAndCheckForTimestamps() {
@@ -230,15 +230,16 @@ class SentrySpanTests: XCTestCase {
         XCTAssertEqual(serialization["op"] as? String, span.operation)
         XCTAssertEqual(serialization["description"] as? String, span.spanDescription)
         XCTAssertEqual(serialization["status"] as? String, nameForSentrySpanStatus(span.status))
-        XCTAssertEqual(serialization["sampled"] as? String, nameForSentrySampleDecision(span.sampled))
+        XCTAssertEqual(serialization["sampled"] as? NSNumber, valueForSentrySampleDecision(span.sampled))
         XCTAssertEqual(serialization["timestamp"] as? TimeInterval, TestData.timestamp.timeIntervalSince1970)
         XCTAssertEqual(serialization["start_timestamp"] as? TimeInterval, TestData.timestamp.timeIntervalSince1970)
         XCTAssertEqual(serialization["type"] as? String, SENTRY_TRACE_TYPE)
-        XCTAssertEqual(serialization["sampled"] as? String, "true")
+        XCTAssertEqual(serialization["sampled"] as? NSNumber, true)
         XCTAssertNotNil(serialization["data"])
         XCTAssertNotNil(serialization["tags"])
         XCTAssertEqual((serialization["data"] as! Dictionary)[fixture.extraKey], fixture.extraValue)
         XCTAssertEqual((serialization["tags"] as! Dictionary)[fixture.extraKey], fixture.extraValue)
+        XCTAssertEqual("manual", serialization["origin"] as? String)
     }
 
     func testSerialization_NoFrames() {

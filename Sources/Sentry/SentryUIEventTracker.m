@@ -1,17 +1,19 @@
-#import "SentrySwizzleWrapper.h"
-#import <SentryHub+Private.h>
-#import <SentryLog.h>
-#import <SentrySDK+Private.h>
-#import <SentrySDK.h>
-#import <SentryScope.h>
-#import <SentrySpanId.h>
-#import <SentrySpanOperations.h>
-#import <SentrySpanProtocol.h>
-#import <SentryTracer.h>
-#import <SentryTransactionContext+Private.h>
 #import <SentryUIEventTracker.h>
 
 #if SENTRY_HAS_UIKIT
+
+#    import "SentrySwizzleWrapper.h"
+#    import <SentryHub+Private.h>
+#    import <SentryLog.h>
+#    import <SentrySDK+Private.h>
+#    import <SentrySDK.h>
+#    import <SentryScope.h>
+#    import <SentrySpanId.h>
+#    import <SentrySpanOperations.h>
+#    import <SentrySpanProtocol.h>
+#    import <SentryTraceOrigins.h>
+#    import <SentryTracer.h>
+#    import <SentryTransactionContext+Private.h>
 #    import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -29,11 +31,7 @@ SentryUIEventTracker ()
 
 @end
 
-#endif
-
 @implementation SentryUIEventTracker
-
-#if SENTRY_HAS_UIKIT
 
 - (instancetype)initWithSwizzleWrapper:(SentrySwizzleWrapper *)swizzleWrapper
                   dispatchQueueWrapper:(SentryDispatchQueueWrapper *)dispatchQueueWrapper
@@ -110,7 +108,8 @@ SentryUIEventTracker ()
             SentryTransactionContext *context =
                 [[SentryTransactionContext alloc] initWithName:transactionName
                                                     nameSource:kSentryTransactionNameSourceComponent
-                                                     operation:operation];
+                                                     operation:operation
+                                                        origin:SentryTraceOriginUIEventTracker];
 
             __block SentryTracer *transaction;
             [SentrySDK.currentHub.scope useSpan:^(id<SentrySpan> _Nullable span) {
@@ -206,12 +205,6 @@ SentryUIEventTracker ()
     return [NSString stringWithFormat:@"%@.%@", target, components.firstObject];
 }
 
-NS_ASSUME_NONNULL_END
-
-#endif
-
-NS_ASSUME_NONNULL_BEGIN
-
 + (BOOL)isUIEventOperation:(NSString *)operation
 {
     if ([operation isEqualToString:SentrySpanOperationUIAction]) {
@@ -226,3 +219,5 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif // SENTRY_HAS_UIKIT

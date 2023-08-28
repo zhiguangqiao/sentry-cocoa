@@ -1,21 +1,22 @@
-#import "SentryInternalDefines.h"
-#import "SentryScope.h"
-#import <Foundation/Foundation.h>
-#import <SentryDebugMeta.h>
-#import <SentryDependencyContainer.h>
-#import <SentryEvent.h>
-#import <SentryException.h>
-#import <SentryFrame.h>
-#import <SentryHexAddressFormatter.h>
-#import <SentryInAppLogic.h>
-#import <SentryLog.h>
-#import <SentryMechanism.h>
 #import <SentryMetricKitIntegration.h>
-#import <SentrySDK+Private.h>
-#import <SentryStacktrace.h>
-#import <SentryThread.h>
 
 #if SENTRY_HAS_METRIC_KIT
+
+#    import "SentryInternalDefines.h"
+#    import "SentryScope.h"
+#    import <Foundation/Foundation.h>
+#    import <SentryDebugMeta.h>
+#    import <SentryDependencyContainer.h>
+#    import <SentryEvent.h>
+#    import <SentryException.h>
+#    import <SentryFormatter.h>
+#    import <SentryFrame.h>
+#    import <SentryInAppLogic.h>
+#    import <SentryLog.h>
+#    import <SentryMechanism.h>
+#    import <SentrySDK+Private.h>
+#    import <SentryStacktrace.h>
+#    import <SentryThread.h>
 
 /**
  * We need to check if MetricKit is available for compatibility on iOS 12 and below. As there are no
@@ -23,7 +24,7 @@
  */
 #    if __has_include(<MetricKit/MetricKit.h>)
 #        import <MetricKit/MetricKit.h>
-#    endif
+#    endif // __has_include(<MetricKit/MetricKit.h>)
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -386,9 +387,9 @@ SentryMetricKitIntegration ()
         SentryFrame *frame = [[SentryFrame alloc] init];
         frame.package = mxFrame.binaryName;
         frame.inApp = @([self.inAppLogic isInApp:mxFrame.binaryName]);
-        frame.instructionAddress = sentry_formatHexAddress(@(mxFrame.address));
-        NSNumber *imageAddress = @(mxFrame.address - mxFrame.offsetIntoBinaryTextSegment);
-        frame.imageAddress = sentry_formatHexAddress(imageAddress);
+        frame.instructionAddress = sentry_formatHexAddressUInt64(mxFrame.address);
+        uint64_t imageAddress = mxFrame.address - mxFrame.offsetIntoBinaryTextSegment;
+        frame.imageAddress = sentry_formatHexAddressUInt64(imageAddress);
 
         [frames addObject:frame];
     }
@@ -437,8 +438,8 @@ SentryMetricKitIntegration ()
         debugMeta.debugID = binaryUUID;
         debugMeta.codeFile = mxFrame.binaryName;
 
-        NSNumber *imageAddress = @(mxFrame.address - mxFrame.offsetIntoBinaryTextSegment);
-        debugMeta.imageAddress = sentry_formatHexAddress(imageAddress);
+        uint64_t imageAddress = mxFrame.address - mxFrame.offsetIntoBinaryTextSegment;
+        debugMeta.imageAddress = sentry_formatHexAddressUInt64(imageAddress);
 
         debugMetas[debugMeta.debugID] = debugMeta;
     }
@@ -447,12 +448,6 @@ SentryMetricKitIntegration ()
 }
 
 @end
-
-NS_ASSUME_NONNULL_END
-
-#endif
-
-NS_ASSUME_NONNULL_BEGIN
 
 @implementation
 SentryEvent (MetricKit)
@@ -480,3 +475,5 @@ SentryEvent (MetricKit)
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif // SENTRY_HAS_METRIC_KIT

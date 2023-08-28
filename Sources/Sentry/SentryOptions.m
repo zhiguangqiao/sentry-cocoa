@@ -1,11 +1,34 @@
 #import "SentryOptions.h"
 #import "SentryANRTracker.h"
+#import "SentryANRTrackingIntegration.h"
+#import "SentryAutoBreadcrumbTrackingIntegration.h"
+#import "SentryAutoSessionTrackingIntegration.h"
+#import "SentryCoreDataTrackingIntegration.h"
+#import "SentryCrashIntegration.h"
 #import "SentryDsn.h"
+#import "SentryFileIOTrackingIntegration.h"
 #import "SentryHttpStatusCodeRange.h"
 #import "SentryLevelMapper.h"
 #import "SentryLog.h"
 #import "SentryMeta.h"
+#import "SentryNetworkTrackingIntegration.h"
 #import "SentrySDK.h"
+#import "SentryScope.h"
+#import "SentrySwiftAsyncIntegration.h"
+
+#if SENTRY_HAS_UIKIT
+#    import "SentryAppStartTrackingIntegration.h"
+#    import "SentryFramesTrackingIntegration.h"
+#    import "SentryPerformanceTrackingIntegration.h"
+#    import "SentryScreenshotIntegration.h"
+#    import "SentryUIEventTrackingIntegration.h"
+#    import "SentryViewHierarchyIntegration.h"
+#    import "SentryWatchdogTerminationTrackingIntegration.h"
+#endif // SENTRY_HAS_UIKIT
+
+#if SENTRY_HAS_METRIC_KIT
+#    import "SentryMetricKitIntegration.h"
+#endif // SENTRY_HAS_METRIC_KIT
 
 @interface
 SentryOptions ()
@@ -31,24 +54,35 @@ NSString *const kSentryDefaultEnvironment = @"production";
 
 + (NSArray<NSString *> *)defaultIntegrations
 {
+    // The order of integrations here is important.
+    // SentryCrashIntegration needs to be initialized before SentryAutoSessionTrackingIntegration.
     NSMutableArray<NSString *> *defaultIntegrations =
         @[
-            @"SentryCrashIntegration",
+            NSStringFromClass([SentryCrashIntegration class]),
 #if SENTRY_HAS_UIKIT
-            @"SentryScreenshotIntegration", @"SentryUIEventTrackingIntegration",
-            @"SentryViewHierarchyIntegration",
+            NSStringFromClass([SentryAppStartTrackingIntegration class]),
+            NSStringFromClass([SentryFramesTrackingIntegration class]),
+            NSStringFromClass([SentryPerformanceTrackingIntegration class]),
+            NSStringFromClass([SentryScreenshotIntegration class]),
+            NSStringFromClass([SentryUIEventTrackingIntegration class]),
+            NSStringFromClass([SentryViewHierarchyIntegration class]),
+            NSStringFromClass([SentryWatchdogTerminationTrackingIntegration class]),
 #endif
-            @"SentryANRTrackingIntegration", @"SentryFramesTrackingIntegration",
-            @"SentryAutoBreadcrumbTrackingIntegration", @"SentryAutoSessionTrackingIntegration",
-            @"SentryAppStartTrackingIntegration", @"SentryWatchdogTerminationTrackingIntegration",
-            @"SentryPerformanceTrackingIntegration", @"SentryNetworkTrackingIntegration",
-            @"SentryFileIOTrackingIntegration", @"SentryCoreDataTrackingIntegration"
+            NSStringFromClass([SentryANRTrackingIntegration class]),
+            NSStringFromClass([SentryAutoBreadcrumbTrackingIntegration class]),
+            NSStringFromClass([SentryAutoSessionTrackingIntegration class]),
+            NSStringFromClass([SentryCoreDataTrackingIntegration class]),
+            NSStringFromClass([SentryFileIOTrackingIntegration class]),
+            NSStringFromClass([SentryNetworkTrackingIntegration class]),
+            NSStringFromClass([SentrySwiftAsyncIntegration class])
         ]
             .mutableCopy;
 
+#if SENTRY_HAS_METRIC_KIT
     if (@available(iOS 15.0, macOS 12.0, macCatalyst 15.0, *)) {
-        [defaultIntegrations addObject:@"SentryMetricKitIntegration"];
+        [defaultIntegrations addObject:NSStringFromClass([SentryMetricKitIntegration class])];
     }
+#endif // SENTRY_HAS_METRIC_KIT
 
     return defaultIntegrations;
 }
@@ -70,13 +104,14 @@ NSString *const kSentryDefaultEnvironment = @"production";
         self.enableWatchdogTerminationTracking = YES;
         self.sessionTrackingIntervalMillis = [@30000 unsignedIntValue];
         self.attachStacktrace = YES;
-        self.stitchAsyncCode = NO;
         self.maxAttachmentSize = 20 * 1024 * 1024;
         self.sendDefaultPii = NO;
         self.enableAutoPerformanceTracing = YES;
         self.enableCaptureFailedRequests = YES;
         self.environment = kSentryDefaultEnvironment;
-        self.enableTimeToFullDisplay = NO;
+        self.enableTimeToFullDisplayTracing = NO;
+
+        self.initialScope = ^SentryScope *(SentryScope *scope) { return scope; };
 
         _enableTracing = NO;
         _enableTracingManual = NO;
@@ -104,6 +139,7 @@ NSString *const kSentryDefaultEnvironment = @"production";
         self.enableCoreDataTracing = YES;
         _enableSwizzling = YES;
         self.sendClientReports = YES;
+        self.swiftAsyncStacktraces = NO;
 
 #if TARGET_OS_OSX
         NSString *dsn = [[[NSProcessInfo processInfo] environment] objectForKey:@"SENTRY_DSN"];
@@ -313,6 +349,9 @@ NSString *const kSentryDefaultEnvironment = @"production";
     [self setBool:options[@"enableWatchdogTerminationTracking"]
             block:^(BOOL value) { self->_enableWatchdogTerminationTracking = value; }];
 
+    [self setBool:options[@"swiftAsyncStacktraces"]
+            block:^(BOOL value) { self->_swiftAsyncStacktraces = value; }];
+
     if ([options[@"sessionTrackingIntervalMillis"] isKindOfClass:[NSNumber class]]) {
         self.sessionTrackingIntervalMillis =
             [options[@"sessionTrackingIntervalMillis"] unsignedIntValue];
@@ -320,9 +359,6 @@ NSString *const kSentryDefaultEnvironment = @"production";
 
     [self setBool:options[@"attachStacktrace"]
             block:^(BOOL value) { self->_attachStacktrace = value; }];
-
-    [self setBool:options[@"stitchAsyncCode"]
-            block:^(BOOL value) { self->_stitchAsyncCode = value; }];
 
     if ([options[@"maxAttachmentSize"] isKindOfClass:[NSNumber class]]) {
         self.maxAttachmentSize = [options[@"maxAttachmentSize"] unsignedIntValue];
@@ -337,8 +373,12 @@ NSString *const kSentryDefaultEnvironment = @"production";
     [self setBool:options[@"enableCaptureFailedRequests"]
             block:^(BOOL value) { self->_enableCaptureFailedRequests = value; }];
 
-    [self setBool:options[@"enableTimeToFullDisplay"]
-            block:^(BOOL value) { self->_enableTimeToFullDisplay = value; }];
+    [self setBool:options[@"enableTimeToFullDisplayTracing"]
+            block:^(BOOL value) { self->_enableTimeToFullDisplayTracing = value; }];
+
+    if ([self isBlock:options[@"initialScope"]]) {
+        self.initialScope = options[@"initialScope"];
+    }
 
 #if SENTRY_HAS_UIKIT
     [self setBool:options[@"enableUIViewControllerTracing"]

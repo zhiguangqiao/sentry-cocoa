@@ -1,8 +1,9 @@
+#if os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)
+
 import Sentry
 import SentryTestUtils
 import XCTest
 
-#if os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)
 class SentryUIViewControllerSwizzlingTests: XCTestCase {
     
     private class Fixture {
@@ -88,6 +89,9 @@ class SentryUIViewControllerSwizzlingTests: XCTestCase {
     }
     
     func testViewControllerWithLoadView_TransactionBoundToScope() {
+        let d = class_getImageName(type(of: self))!
+        fixture.processInfoWrapper.setProcessPath(String(cString: d))
+
         fixture.sut.start()
         let controller = ViewWithLoadViewController()
         
@@ -286,12 +290,13 @@ class MockApplication: NSObject, SentryUIApplicationProtocol {
     }
 }
 
+// swiftlint:disable prohibited_super_call
 class ViewWithLoadViewController: UIViewController {
     override func loadView() {
-        super.loadView()
         // empty on purpose
     }
 }
+// swiftlint:enable prohibited_super_call
 
 class ObjectWithWindowsProperty: NSObject {
     var resultOfWindows: Any?
@@ -327,7 +332,8 @@ class TestSubClassFinder: SentrySubClassFinder {
     var invocations = Invocations<(imageName: String, block: (AnyClass) -> Void)>()
     override func actOnSubclassesOfViewController(inImage imageName: String, block: @escaping (AnyClass) -> Void) {
         invocations.record((imageName, block))
+        super.actOnSubclassesOfViewController(inImage: imageName, block: block)
     }
 }
 
-#endif
+#endif // os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)

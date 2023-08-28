@@ -4,7 +4,8 @@
 #import "SentryEnvelopeItemType.h"
 #import "SentryScreenFrames.h"
 
-@class SentryDebugMeta, SentryAppStartMeasurement, SentryScreenFrames, SentryOptions;
+@class SentryDebugMeta, SentryAppStartMeasurement, SentryScreenFrames, SentryOptions,
+    SentryBreadcrumb, SentryUser;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -39,9 +40,20 @@ typedef void (^SentryOnAppStartMeasurementAvailable)(
 /**
  * Returns the current list of debug images. Be aware that the @c SentryDebugMeta is actually
  * describing a debug image.
- * @todo This class should be renamed to @c SentryDebugImage in a future version.
+ * @warning This assumes a crash has occurred and attempts to read the crash information from each
+ * image's data segment, which may not be present or be invalid if a crash has not actually
+ * occurred. To avoid this, use the new @c +[getDebugImagesCrashed:] instead.
  */
 + (NSArray<SentryDebugMeta *> *)getDebugImages;
+
+/**
+ * Returns the current list of debug images. Be aware that the @c SentryDebugMeta is actually
+ * describing a debug image.
+ * @param isCrash @c YES if we're collecting binary images for a crash report, @c NO if we're
+ * gathering them for other backtrace information, like a performance transaction. If this is for a
+ * crash, each image's data section crash info is also included.
+ */
++ (NSArray<SentryDebugMeta *> *)getDebugImagesCrashed:(BOOL)isCrash;
 
 /**
  * Override SDK information.
@@ -67,6 +79,20 @@ typedef void (^SentryOnAppStartMeasurementAvailable)(
  * Retrieves extra context
  */
 + (NSDictionary *)getExtraContext;
+
+#if SENTRY_TARGET_PROFILING_SUPPORTED
+/**
+ * Start a profiler session associated with the given @c SentryId.
+ * @return The system time when the profiler session started.
+ */
++ (uint64_t)startProfilingForTrace:(SentryId *)traceId;
+
+/**
+ * Collect a profiler session data associated with the given @c SentryId.
+ */
++ (nullable NSDictionary<NSString *, id> *)collectProfileForTrace:(SentryId *)traceId
+                                                            since:(uint64_t)startSystemTime;
+#endif
 
 @property (class, nullable, nonatomic, copy)
     SentryOnAppStartMeasurementAvailable onAppStartMeasurementAvailable;
@@ -102,6 +128,10 @@ typedef void (^SentryOnAppStartMeasurementAvailable)(
 
 + (NSData *)captureViewHierarchy;
 #endif
+
++ (SentryUser *)userWithDictionary:(NSDictionary *)dictionary;
+
++ (SentryBreadcrumb *)breadcrumbWithDictionary:(NSDictionary *)dictionary;
 
 @end
 

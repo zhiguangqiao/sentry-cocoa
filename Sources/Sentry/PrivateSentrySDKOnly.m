@@ -1,16 +1,23 @@
 #import "PrivateSentrySDKOnly.h"
+#import "SentryBreadcrumb+Private.h"
 #import "SentryClient.h"
+#import "SentryCurrentDateProvider.h"
 #import "SentryDebugImageProvider.h"
 #import "SentryExtraContextProvider.h"
 #import "SentryHub+Private.h"
 #import "SentryInstallation.h"
+#import "SentryInternalDefines.h"
 #import "SentryMeta.h"
+#import "SentryProfiler.h"
 #import "SentrySDK+Private.h"
 #import "SentrySerialization.h"
+#import "SentryUser+Private.h"
 #import "SentryViewHierarchy.h"
+#import <SentryBreadcrumb.h>
 #import <SentryDependencyContainer.h>
 #import <SentryFramesTracker.h>
 #import <SentryScreenshot.h>
+#import <SentryUser.h>
 
 @implementation PrivateSentrySDKOnly
 
@@ -37,7 +44,14 @@ static BOOL _framesTrackingMeasurementHybridSDKMode = NO;
 
 + (NSArray<SentryDebugMeta *> *)getDebugImages
 {
-    return [[SentryDependencyContainer sharedInstance].debugImageProvider getDebugImages];
+    // maintains previous behavior for the same method call by also trying to gather crash info
+    return [self getDebugImagesCrashed:YES];
+}
+
++ (NSArray<SentryDebugMeta *> *)getDebugImagesCrashed:(BOOL)isCrash
+{
+    return [[SentryDependencyContainer sharedInstance].debugImageProvider
+        getDebugImagesCrashed:isCrash];
 }
 
 + (nullable SentryAppStartMeasurement *)appStartMeasurement
@@ -106,6 +120,30 @@ static BOOL _framesTrackingMeasurementHybridSDKMode = NO;
     return [[SentryExtraContextProvider sharedInstance] getExtraContext];
 }
 
+#if SENTRY_TARGET_PROFILING_SUPPORTED
++ (uint64_t)startProfilingForTrace:(SentryId *)traceId;
+{
+    [SentryProfiler startWithTracer:traceId];
+    return SentryDependencyContainer.sharedInstance.dateProvider.systemTime;
+}
+
++ (nullable NSDictionary<NSString *, id> *)collectProfileForTrace:(SentryId *)traceId
+                                                            since:(uint64_t)startSystemTime;
+{
+    NSMutableDictionary<NSString *, id> *payload = [SentryProfiler
+        collectProfileBetween:startSystemTime
+                          and:SentryDependencyContainer.sharedInstance.dateProvider.systemTime
+                     forTrace:traceId
+                        onHub:[SentrySDK currentHub]];
+
+    if (payload != nil) {
+        payload[@"platform"] = SentryPlatformName;
+    }
+
+    return payload;
+}
+#endif // SENTRY_TARGET_PROFILING_SUPPORTED
+
 #if SENTRY_HAS_UIKIT
 
 + (BOOL)framesTrackingMeasurementHybridSDKMode
@@ -120,12 +158,12 @@ static BOOL _framesTrackingMeasurementHybridSDKMode = NO;
 
 + (BOOL)isFramesTrackingRunning
 {
-    return [SentryFramesTracker sharedInstance].isRunning;
+    return SentryDependencyContainer.sharedInstance.framesTracker.isRunning;
 }
 
 + (SentryScreenFrames *)currentScreenFrames
 {
-    return [SentryFramesTracker sharedInstance].currentFrames;
+    return SentryDependencyContainer.sharedInstance.framesTracker.currentFrames;
 }
 
 + (NSArray<NSData *> *)captureScreenshots
@@ -139,5 +177,15 @@ static BOOL _framesTrackingMeasurementHybridSDKMode = NO;
 }
 
 #endif
+
++ (SentryUser *)userWithDictionary:(NSDictionary *)dictionary
+{
+    return [[SentryUser alloc] initWithDictionary:dictionary];
+}
+
++ (SentryBreadcrumb *)breadcrumbWithDictionary:(NSDictionary *)dictionary
+{
+    return [[SentryBreadcrumb alloc] initWithDictionary:dictionary];
+}
 
 @end

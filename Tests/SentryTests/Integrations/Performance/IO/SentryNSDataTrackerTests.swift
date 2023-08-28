@@ -6,7 +6,7 @@ class SentryNSDataTrackerTests: XCTestCase {
     private class Fixture {
         
         let filePath = "Some Path"
-        let sentryPath = try! TestFileManager(options: Options(), andCurrentDateProvider: DefaultCurrentDateProvider.sharedInstance()).sentryPath 
+        let sentryPath = try! TestFileManager(options: Options()).sentryPath 
         let dateProvider = TestCurrentDateProvider()
         let data = "SOME DATA".data(using: .utf8)!
         let threadInspector = TestThreadInspector.instance
@@ -22,7 +22,7 @@ class SentryNSDataTrackerTests: XCTestCase {
             processInfoWrapper.overrides.processDirectoryPath = "sentrytest"
 
             let result = SentryNSDataTracker(threadInspector: threadInspector, processInfoWrapper: processInfoWrapper)
-            CurrentDate.setCurrentDateProvider(dateProvider)
+            SentryDependencyContainer.sharedInstance().dateProvider = dateProvider
             result.enable()
             return result
         }
@@ -297,6 +297,7 @@ class SentryNSDataTrackerTests: XCTestCase {
     private func assertDataSpan(_ span: Span?, path: String, operation: String, size: Int, mainThread: Bool = true ) {
         XCTAssertNotNil(span)
         XCTAssertEqual(span?.operation, operation)
+        XCTAssertEqual(span?.origin, "auto.file.ns_data")
         XCTAssertTrue(span?.isFinished ?? false)
         XCTAssertEqual(span?.data["file.size"] as? Int, size)
         XCTAssertEqual(span?.data["file.path"] as? String, path)

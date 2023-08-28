@@ -24,6 +24,7 @@ SentryStacktraceBuilder ()
 {
     if (self = [super init]) {
         self.crashStackEntryMapper = crashStackEntryMapper;
+        self.symbolicate = NO;
     }
     return self;
 }
@@ -40,12 +41,11 @@ SentryStacktraceBuilder ()
             // skip the marker frame
             continue;
         }
-        if (stackCursor.symbolicate(&stackCursor)) {
+        if (self.symbolicate == false || stackCursor.symbolicate(&stackCursor)) {
             frame = [self.crashStackEntryMapper mapStackEntryWithCursor:stackCursor];
             [frames addObject:frame];
         }
     }
-    sentrycrash_async_backtrace_decref(stackCursor.async_caller);
 
     NSArray<SentryFrame *> *framesCleared = [SentryFrameRemover removeNonSdkFrames:frames];
 
